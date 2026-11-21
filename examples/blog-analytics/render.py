@@ -154,7 +154,12 @@ def render(args, now):
             subprocess.run([
                 'goaccess', str(log), '--log-format=COMBINED', '--anonymize-ip',
                 '--ignore-panel=HOSTS', '--no-progress', '-o', str(details)
-            ], check=True, env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+            ], check=True, env={
+                'PATH': '/usr/bin:/bin',
+                'LANG': args.goaccess_locale,
+                # Nginx 日志使用 Jan、Nov 等英文月份。
+                'LC_TIME': 'C',
+            })
         else:
             details.write_text(
                 '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>GoAccess 请求明细</title>'
@@ -173,6 +178,7 @@ if __name__ == '__main__':
     cli.add_argument('--public-root', type=Path, required=True)
     cli.add_argument('--since', required=True, help='日志开始时间，带时区的 ISO 8601')
     cli.add_argument('--timezone', default='Asia/Shanghai')
+    cli.add_argument('--goaccess-locale', default='C', help='GoAccess 报表语言，例如 zh_CN.UTF-8')
     cli.add_argument('--article-prefix', default='/posts/')
     cli.add_argument('--admin-path', default='/admin/')
     arguments = cli.parse_args()

@@ -37,3 +37,5 @@ python3 render.py --log /var/log/nginx/blog.analytics.log \
 将 `--since` 换成实际日志开始时间，设置日志轮转和报表更新任务。统计页按成功页面请求估算按日独立访客，按文章前缀统计热门内容。请求明细由 GoAccess 输出，报告中关闭主机列表、对 IP 匿名化，并且源日志格式省略查询参数及来源。域名、认证配置、真实日志和生成的报表均在部署环境提供，示例代码无需这些数据。
 
 支持图文文章目录的 Hugo 站点可在文章集合下配置 `entry_depth: 2`，同时扫描直接放在集合目录的 Markdown 和子目录下的 Markdown。该配置只影响读取深度。
+
+简体中文明细可在服务器安装对应的 GoAccess 语言包与系统 locale 后，给 `render.py` 添加 `--goaccess-locale zh_CN.UTF-8`。Nginx 日志中的英文月份仍按英文解析。
