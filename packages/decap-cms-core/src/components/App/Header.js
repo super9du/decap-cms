@@ -114,10 +114,6 @@ const AppHeaderButton = styled.button`
 
 const AppHeaderNavLink = AppHeaderButton.withComponent(NavLink);
 
-const AppHeaderReportLink = styled(AppHeaderButton.withComponent('a'))`
-  text-decoration: none;
-`;
-
 const AppHeaderActions = styled.div`
   display: flex;
   align-items: center;
@@ -267,7 +263,10 @@ class Header extends Component {
               )}
               {analytics && (
                 <li>
-                  <AppHeaderReportLink href={analytics.path}>{analytics.label}</AppHeaderReportLink>
+                  <AppHeaderNavLink to="/analytics" exact activeClassName="header-link-active">
+                    <Icon type="analytics" />
+                    {analytics.label}
+                  </AppHeaderNavLink>
                 </li>
               )}
               {hasDeployStatus && (

@@ -383,6 +383,7 @@ export interface CmsCollection {
     visualEditing?: boolean;
   };
   publish?: boolean;
+  entry_depth?: number;
   nested?: {
     depth: number;
   };
@@ -750,6 +751,7 @@ type CollectionObject = {
   sortable_fields: List<StaticallyTypedRecord<SortableField>>;
   view_filters: List<StaticallyTypedRecord<ViewFilter>>;
   view_groups: List<StaticallyTypedRecord<ViewGroup>>;
+  entry_depth?: number;
   nested?: Nested;
   meta?: Meta;
   i18n: i18n;

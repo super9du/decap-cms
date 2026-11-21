@@ -23,6 +23,7 @@
     body, h1, h2, p, figure { margin: 0; }
     ::selection { background: #ded3fb; color: var(--ink); }
     .frame { width: min(1100px, calc(100% - 64px)); margin-inline: auto; }
+    #embedded:target ~ header { display: none; }
     header { background: var(--white); border-bottom: 1px solid var(--line); }
     .top { display: flex; align-items: center; gap: 27px; min-height: 62px; }
     .brand { color: inherit; font-size: 16px; font-weight: 750; text-decoration: none; }
@@ -89,6 +90,7 @@
   </style>
 </head>
 <body>
+  <span id="embedded" hidden></span>
   <header><div class="frame top"><a class="brand" href="$admin_path">博客后台</a><span class="current" aria-current="page">访问统计</span></div></header>
   <main class="frame">
     <div class="page-head"><h1>访问统计</h1><p class="meta">$updated_label</p></div>
@@ -114,7 +116,7 @@
       <div class="panel-head"><h2 id="articles">热门文章</h2><span class="meta">$date_range</span></div>
       $articles
     </section>
-    <footer class="note">$coverage独立访客按同一天的 IP 和浏览器标识去重，为估算值。 · <a href="details.html">GoAccess 请求明细</a></footer>
+    <footer class="note">$coverage独立访客按同一天的 IP 和浏览器标识去重，为估算值。 · <a href="details.html" target="_top">GoAccess 请求明细</a></footer>
   </main>
 </body>
 </html>

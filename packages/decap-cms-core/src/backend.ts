@@ -343,7 +343,8 @@ function prepareMetaPath(path: string, collection: Collection) {
 function collectionDepth(collection: Collection) {
   let depth;
   depth =
-    collection.get('nested')?.get('depth') || getPathDepth(collection.get('path', '') as string);
+    collection.get('entry_depth') ??
+    (collection.get('nested')?.get('depth') || getPathDepth(collection.get('path', '') as string));
 
   if (hasI18n(collection)) {
     depth = getI18nFilesDepth(collection, depth);

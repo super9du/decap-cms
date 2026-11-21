@@ -331,6 +331,7 @@ function getConfigSchema() {
             },
             view_filters: viewFilters,
             view_groups: viewGroups,
+            entry_depth: { type: 'integer', minimum: 1, maximum: 1000 },
             nested: {
               type: 'object',
               properties: {

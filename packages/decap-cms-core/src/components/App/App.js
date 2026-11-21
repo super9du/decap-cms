@@ -39,6 +39,18 @@ const AppMainContainer = styled.div`
   margin: 0 auto;
 `;
 
+const AnalyticsFrame = styled.iframe`
+  display: block;
+  width: 100%;
+  height: calc(100dvh - 110px);
+  min-height: 20rem;
+  border: 0;
+
+  @media (min-width: 800px) {
+    height: calc(100dvh - 56px);
+  }
+`;
+
 const ErrorContainer = styled.div`
   margin: 20px;
 `;
@@ -295,6 +307,15 @@ export class App extends Component {
                 return <Redirect to={`/collections/${name}/entries/${entryName}`} />;
               }}
             />
+            {config.analytics && (
+              <Route path="/analytics" exact>
+                <AnalyticsFrame
+                  title={config.analytics.label}
+                  src={`${config.analytics.path}#embedded`}
+                  sandbox="allow-same-origin allow-top-navigation-by-user-activation"
+                />
+              </Route>
+            )}
             <Route component={NotFoundPage} />
           </Switch>
           {useMediaLibrary ? <MediaLibrary /> : null}
