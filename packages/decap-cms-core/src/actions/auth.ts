@@ -140,7 +140,15 @@ export function logoutUser() {
     // Before backend.logout(): the subscriptions are module singletons, and left
     // set they would skip resubscribing after the next login.
     stopDeployNotifications();
-    Promise.resolve(backend.logout()).then(() => {
+    const logoutPath = state.config.analytics?.logout_path;
+    const analyticsLogout = logoutPath
+      ? fetch(logoutPath, {
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.timeout(3000),
+        }).catch(() => undefined)
+      : Promise.resolve();
+    Promise.all([backend.logout(), analyticsLogout]).then(() => {
       dispatch(logout());
       dispatch(clearNotifications());
     });

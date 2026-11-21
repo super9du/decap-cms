@@ -475,6 +475,7 @@ export interface CmsConfig {
   locale?: string;
   site_url?: string;
   display_url?: string;
+  analytics?: { path: string; label: string; logout_path?: string };
   logo_url?: string; // Deprecated, replaced by `logo.src`
   logo?: {
     src: string;

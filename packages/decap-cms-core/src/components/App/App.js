@@ -230,6 +230,7 @@ export class App extends Component {
             openMediaLibrary={openMediaLibrary}
             hasWorkflow={hasWorkflow}
             displayUrl={config.display_url}
+            analytics={config.analytics}
             logoUrl={config.logo_url} // Deprecated, replaced by `logo.src`
             logo={config.logo}
             isTestRepo={config.backend.name === 'test-repo'}

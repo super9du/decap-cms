@@ -114,6 +114,10 @@ const AppHeaderButton = styled.button`
 
 const AppHeaderNavLink = AppHeaderButton.withComponent(NavLink);
 
+const AppHeaderReportLink = styled(AppHeaderButton.withComponent('a'))`
+  text-decoration: none;
+`;
+
 const AppHeaderActions = styled.div`
   display: flex;
   align-items: center;
@@ -166,6 +170,10 @@ class Header extends Component {
     openMediaLibrary: PropTypes.func.isRequired,
     hasWorkflow: PropTypes.bool.isRequired,
     displayUrl: PropTypes.string,
+    analytics: PropTypes.shape({
+      path: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+    }),
     logoUrl: PropTypes.string, // Deprecated, replaced by `logo.src`
     logo: PropTypes.shape({
       src: PropTypes.string.isRequired,
@@ -206,6 +214,7 @@ class Header extends Component {
       openMediaLibrary,
       hasWorkflow,
       displayUrl,
+      analytics,
       logoUrl, // Deprecated, replaced by `logo.src`
       logo,
       isTestRepo,
@@ -254,6 +263,11 @@ class Header extends Component {
                     <Icon type="media-alt" />
                     {t('app.header.media')}
                   </AppHeaderButton>
+                </li>
+              )}
+              {analytics && (
+                <li>
+                  <AppHeaderReportLink href={analytics.path}>{analytics.label}</AppHeaderReportLink>
                 </li>
               )}
               {hasDeployStatus && (

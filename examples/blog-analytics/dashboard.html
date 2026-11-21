@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>访问统计 · 博客后台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f7fb;
+      --white: #fff;
+      --ink: #23203c;
+      --muted: #645f77;
+      --line: #e6e3ed;
+      --accent: #5339b8;
+      --lavender: #ece7fa;
+      --bar: #b8a6ea;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    * { box-sizing: border-box; }
+    body, h1, h2, p, figure { margin: 0; }
+    ::selection { background: #ded3fb; color: var(--ink); }
+    .frame { width: min(1100px, calc(100% - 64px)); margin-inline: auto; }
+    header { background: var(--white); border-bottom: 1px solid var(--line); }
+    .top { display: flex; align-items: center; gap: 27px; min-height: 62px; }
+    .brand { color: inherit; font-size: 16px; font-weight: 750; text-decoration: none; }
+    .brand:hover, .brand:focus-visible { text-decoration: underline; }
+    .empty { padding-top: 16px; color: var(--muted); }
+    .current { align-self: stretch; display: flex; align-items: center; border-bottom: 2px solid var(--accent); color: var(--accent); font-weight: 650; padding: 0 2px; }
+    main { padding: 39px 0 30px; }
+    .page-head, .panel-head, .chart-cap { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .page-head { margin-bottom: 22px; }
+    h1 { font-size: 34px; line-height: 1.2; letter-spacing: -.025em; font-weight: 750; }
+    h2 { font-size: 18px; font-weight: 700; }
+    .meta, .note, .scale, .day, .rank { color: var(--muted); }
+    .meta, .note { font-size: 12px; }
+    .num, .scale, .day { font-variant-numeric: tabular-nums; }
+    .overview { display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 16px; }
+    .panel { border: 1px solid var(--line); border-radius: 14px; background: var(--white); padding: 22px 24px; }
+    .today { background: var(--lavender); border-color: #e2d9f5; display: flex; flex-direction: column; }
+    .today .date { margin-top: 5px; color: #554476; }
+    .total { margin-top: auto; padding-top: 24px; color: #322062; font-size: clamp(62px, 7vw, 84px); line-height: .99; font-weight: 720; letter-spacing: -.04em; }
+    .total span { margin-left: 9px; color: #554476; font-size: 15px; font-weight: 600; letter-spacing: 0; }
+    .change { margin-top: 13px; color: #554476; font-size: 12px; }
+    .change strong { color: #432b8c; font-weight: 700; margin-left: 6px; }
+    .chart-cap { align-items: baseline; }
+    .graph { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; margin-top: 17px; }
+    .scale { height: 139px; display: flex; flex-direction: column; justify-content: space-between; text-align: right; font-size: 11px; padding-top: 0; list-style: none; margin: -8px 0 0; padding-left: 0; }
+    .plot { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .gridlines { position: absolute; inset: 0 0 auto; height: 124px; display: flex; flex-direction: column; justify-content: space-between; }
+    .gridlines i { border-top: 1px solid var(--line); }
+    .column { position: relative; display: grid; grid-template-rows: 124px auto; justify-items: center; min-width: 0; outline-offset: 3px; }
+    .column:focus-visible { outline: 2px solid var(--accent); border-radius: 6px; }
+    .bar { position: relative; align-self: end; width: min(48px, 59%); height: var(--height); background: var(--bar); border-radius: 5px 5px 0 0; }
+    .column.current-day .bar, .column:hover .bar, .column:focus .bar { background: var(--accent); }
+    .day { font-size: 11px; padding-top: 7px; white-space: nowrap; }
+    .current-day .day { color: var(--accent); font-weight: 700; }
+    .value { opacity: 0; position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 700; white-space: nowrap; background: var(--white); padding-inline: 3px; border-radius: 3px; }
+    .current-day .value, .column:hover .value, .column:focus .value { opacity: 1; }
+    .articles { margin-top: 16px; }
+    .articles table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    th:last-child, td:last-child { text-align: right; }
+    tbody tr:last-child td { border-bottom: 0; padding-bottom: 3px; }
+    .rank { text-align: left; width: 38px; }
+    .article-title { font-weight: 600; padding-right: 12px; }
+    .count { width: 210px; }
+    .count-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+    .count-num { min-width: 31px; font-weight: 700; }
+    .meter { display: block; width: 122px; height: 5px; background: var(--lavender); border-radius: 8px; }
+    .meter i { display: block; height: 100%; width: var(--share); border-radius: inherit; background: var(--bar); }
+    footer { margin-top: 14px; }
+    @media (max-width: 760px) {
+      .frame { width: calc(100% - 32px); }
+      .overview { grid-template-columns: 1fr; gap: 12px; }
+      .articles { margin-top: 12px; }
+      main { padding-top: 24px; }
+      h1 { font-size: 28px; }
+      .page-head { flex-wrap: wrap; margin-bottom: 16px; }
+      .panel { padding: 16px; }
+      .count { width: auto; }
+      .meter { width: clamp(25px, 9vw, 75px); }
+      .rank { width: 34px; }
+    }
+    @media (max-width: 360px) { .meter { display: none; } }
+  </style>
+</head>
+<body>
+  <header><div class="frame top"><a class="brand" href="$admin_path">博客后台</a><span class="current" aria-current="page">访问统计</span></div></header>
+  <main class="frame">
+    <div class="page-head"><h1>访问统计</h1><p class="meta">$updated_label</p></div>
+    <div class="overview">
+      <section class="panel today" aria-labelledby="today">
+        <h2 id="today">今日独立访客</h2>
+        <p class="date meta"><time datetime="$today_iso">$today_label</time></p>
+        <p class="total num">$today_total<span>人</span></p>
+        <p class="change">$comparison</p>
+      </section>
+      <figure class="panel">
+        <figcaption class="chart-cap"><h2>近 7 天趋势</h2><span class="meta">独立访客 / 人</span></figcaption>
+        <div class="graph">
+          <ul class="scale" aria-hidden="true">$axis</ul>
+          <div class="plot">
+            <div class="gridlines" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            $columns
+          </div>
+        </div>
+      </figure>
+    </div>
+    <section class="panel articles" aria-labelledby="articles">
+      <div class="panel-head"><h2 id="articles">热门文章</h2><span class="meta">$date_range</span></div>
+      $articles
+    </section>
+    <footer class="note">$coverage独立访客按同一天的 IP 和浏览器标识去重，为估算值。 · <a href="details.html">GoAccess 请求明细</a></footer>
+  </main>
+</body>
+</html>

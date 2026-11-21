@@ -193,6 +193,16 @@ function getConfigSchema() {
       i18n: i18nRoot,
       site_url: { type: 'string', examples: ['https://example.com'] },
       display_url: { type: 'string', examples: ['https://example.com'] },
+      analytics: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', pattern: '^/(?!/)[a-zA-Z0-9/_-]+/$' },
+          label: { type: 'string', minLength: 1 },
+          logout_path: { type: 'string', pattern: '^/(?!/)[a-zA-Z0-9/_-]+$' },
+        },
+        required: ['path', 'label'],
+        additionalProperties: false,
+      },
       logo_url: { type: 'string', examples: ['https://example.com/images/logo.svg'] }, // Deprecated, replaced by `logo.src`
       logo: {
         type: 'object',
