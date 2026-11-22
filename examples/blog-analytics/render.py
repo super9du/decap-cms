@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""从单站点的 Nginx 日志生成聚合看板及 GoAccess 明细。"""
+"""从 Nginx 日志生成聚合看板及 GoAccess 明细。"""
 import argparse
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta
 import gzip
 from html import escape, unescape
+import json
 from pathlib import Path
 import re
 from string import Template
@@ -15,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 TEMPLATE = Path(__file__).with_name('dashboard.html')
 LOG_PATTERN = re.compile(
-    r'(?P<ip>\S+) - - \[(?P<stamp>[^\]]+)\] '
+    r'(?:(?P<host>[A-Za-z0-9_.-]+) )?(?P<ip>\S+) - - \[(?P<stamp>[^\]]+)\] '
     r'"(?P<method>\S+) (?P<path>/\S*) HTTP/[^"]+" (?P<status>\d{3}) \d+ "-" "(?P<agent>[^"]*)"'
 )
 BOT = re.compile(r'bot\b|crawl|spider|slurp|headless|curl/|wget/|python-requests|^-$', re.I)
@@ -79,6 +80,54 @@ def articles_html(root, counter):
       <th scope="col">文章</th><th scope="col" class="count">浏览次数</th></tr></thead><tbody>''' + '\n'.join(rows) + '</tbody></table>'
 
 
+GOACCESS_FORMAT = '%v %h - - [%d:%t %^] "%r" %s %b "%R" "%u"'
+
+
+def run_goaccess(log, output, locale, *options):
+    subprocess.run([
+        'goaccess', str(log), '--log-format=' + GOACCESS_FORMAT,
+        '--date-format=%d/%b/%Y', '--time-format=%T', '--anonymize-ip',
+        '--ignore-panel=HOSTS', '--no-progress', *options, '-o', str(output),
+    ], check=True, env={
+        'PATH': '/usr/bin:/bin',
+        'LANG': locale,
+        # Nginx 日志使用 Jan、Nov 等英文月份。
+        'LC_TIME': 'C',
+    })
+
+
+def details_summary(visitors, domains):
+    groups = []
+    for domain, paths in sorted(domains.items()):
+        rows = ''.join(
+            f'<tr><td style="overflow-wrap:anywhere">{escape(path)}</td><td>{count:,}</td></tr>'
+            for path, count in sorted(paths.items(), key=lambda item: (-item[1], item[0]))[:50]
+        )
+        groups.append(f'''<details class="traffic-domain">
+          <summary>{escape(domain)} · {sum(paths.values()):,} 次请求</summary>
+          <table class="table">
+            <thead><tr><th scope="col">访问路径</th><th scope="col">请求次数</th></tr></thead>
+            <tbody>{rows}</tbody>
+          </table>
+        </details>''')
+    domain_groups = ''.join(groups) or '<p>暂无访问记录。</p>'
+    return f'''<section class="traffic-summary" aria-label="过滤机器人与域名请求统计">
+      <style>
+        .traffic-summary {{margin-block:1.5rem 2rem;padding:1rem 1.25rem;border:1px solid #777;border-radius:.5rem}}
+        .traffic-summary h2 {{font-size:1.45rem;margin:.25rem 0 .5rem}}
+        .traffic-summary h3 {{font-size:1.2rem;margin:1.25rem 0 .5rem}}
+        .traffic-summary .traffic-value {{font-size:1.65em;margin-inline-end:.35em}}
+        .traffic-domain {{padding:.55rem 0}}
+        .traffic-domain summary {{cursor:pointer;font-weight:600}}
+        .traffic-domain table {{margin-top:.45rem}}
+      </style>
+      <h2>独立访客（排除已识别机器人）</h2>
+      <p><strong class="traffic-value">{visitors:,}</strong>人 · 近 7 天按日去重</p>
+      <h3>按域名查看访问地址</h3>
+      <p>每个域名显示请求最多的 50 条路径。</p>
+      {domain_groups}
+    </section>'''
+
 def render(args, now):
     since = datetime.fromisoformat(args.since).astimezone(now.tzinfo)
     days = [now.date() - timedelta(days=offset) for offset in range(6, -1, -1)]
@@ -87,15 +136,18 @@ def render(args, now):
     visitors = defaultdict(set)
     previous = set()
     articles = Counter()
+    domains = defaultdict(Counter)
     root = args.public_root.resolve(strict=True)
     args.output.mkdir(parents=True, exist_ok=True)
 
     with TemporaryDirectory(prefix='.refresh-', dir=args.output) as temporary:
         stage = Path(temporary)
         log = stage / 'sanitized.log'
-        with log.open('w', encoding='utf-8') as report:
+        human_log = stage / 'human.log'
+        with log.open('w', encoding='utf-8') as report, human_log.open('w', encoding='utf-8') as humans:
             for line in log_lines(args.log):
-                match = LOG_PATTERN.fullmatch(line.rstrip('\n'))
+                line = line.rstrip('\n')
+                match = LOG_PATTERN.fullmatch(line)
                 if not match:
                     continue
                 hit = match.groupdict()
@@ -106,9 +158,15 @@ def render(args, now):
                 if path.startswith(('/admin/', '/admin-auth/')) or path in ('/admin', '/github-webhook/'):
                     continue
                 # 详细报表不包含来源、查询参数或完整 IP。
-                report.write(line.rstrip('\n') + '\n')
+                host = hit['host'] or args.legacy_host
+                normalized = host + ' ' + line[match.start('ip'):] + '\n'
+                report.write(normalized)
+                domains[host][path] += 1
+                is_bot = BOT.search(hit['agent'])
+                if not is_bot:
+                    humans.write(normalized)
                 if (hit['method'] != 'GET' or hit['status'] not in ('200', '304')
-                        or not PAGE.fullmatch(path) or BOT.search(hit['agent'])):
+                        or not PAGE.fullmatch(path) or is_bot):
                     continue
                 if path.endswith('/index.html'):
                     path = path.removesuffix('index.html')
@@ -151,19 +209,25 @@ def render(args, now):
         (stage / 'index.html').write_text(rendered, encoding='utf-8')
         details = stage / 'details.html'
         if log.stat().st_size:
-            subprocess.run([
-                'goaccess', str(log), '--log-format=COMBINED', '--anonymize-ip',
-                '--ignore-panel=HOSTS', '--no-progress', '-o', str(details)
-            ], check=True, env={
-                'PATH': '/usr/bin:/bin',
-                'LANG': args.goaccess_locale,
-                # Nginx 日志使用 Jan、Nov 等英文月份。
-                'LC_TIME': 'C',
-            })
+            run_goaccess(log, details, args.goaccess_locale)
+            human_visitors = 0
+            if human_log.stat().st_size:
+                human_report = stage / 'human.json'
+                run_goaccess(human_log, human_report, 'C', '--ignore-crawlers')
+                human_visitors = json.loads(human_report.read_text(encoding='utf-8'))['general']['unique_visitors']
+            summary = details_summary(human_visitors, domains)
+            report_html = details.read_text(encoding='utf-8')
+            report_html, panels = re.subn(
+                r"""<div class=["']wrap-panels["']>""",
+                lambda match: summary + match[0], report_html, count=1,
+            )
+            if not panels:
+                report_html = report_html.replace('</body>', summary + '</body>', 1)
+            details.write_text(report_html, encoding='utf-8')
         else:
             details.write_text(
                 '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>GoAccess 请求明细</title>'
-                '<p>暂无请求记录。</p><a href="./">返回访问统计</a></html>', encoding='utf-8'
+                + details_summary(0, domains) + '<a href="./">返回访问统计</a></html>', encoding='utf-8'
             )
         for filename in ('details.html', 'index.html'):
             output = stage / filename
@@ -178,8 +242,11 @@ if __name__ == '__main__':
     cli.add_argument('--public-root', type=Path, required=True)
     cli.add_argument('--since', required=True, help='日志开始时间，带时区的 ISO 8601')
     cli.add_argument('--timezone', default='Asia/Shanghai')
+    cli.add_argument('--legacy-host', default='legacy', help='没有域名字段的旧日志所归属的域名')
     cli.add_argument('--goaccess-locale', default='C', help='GoAccess 报表语言，例如 zh_CN.UTF-8')
     cli.add_argument('--article-prefix', default='/posts/')
     cli.add_argument('--admin-path', default='/admin/')
     arguments = cli.parse_args()
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+', arguments.legacy_host):
+        cli.error('--legacy-host 需要有效的域名')
     render(arguments, datetime.now(ZoneInfo(arguments.timezone)))

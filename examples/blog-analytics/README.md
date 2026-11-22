@@ -12,14 +12,14 @@ analytics:
 
 `analytics.path` 是站内路径，以斜杠开头和结尾。实际报表由部署提供，Decap 只在已登录界面的顶部显示入口。报表嵌在后台导航中，使用 `#embedded` 隐藏独立页面的顶部。应在服务端对报表目录及每个文件校验管理员会话，并允许同源页面嵌入看板。把报表输出放在站点公开目录之外，通过受保护的路径提供。
 
-在 Nginx 的 HTTP 上下文声明以下格式，并且只在需要统计的站点配置对应的访问日志：
+在 Nginx 的 HTTP 上下文声明以下格式，并在需要一起统计的站点写入同一份报表日志：
 
 ```nginx
 map $request_uri $analytics_path {
     "~^([^?]+)" $1;
     default /;
 }
-log_format blog_analytics '$remote_addr - - [$time_local] '
+log_format blog_analytics '$host $remote_addr - - [$time_local] '
                           '"$request_method $analytics_path $server_protocol" '
                           '$status $body_bytes_sent "-" "$http_user_agent"';
 # 站点的 server 块内
@@ -39,3 +39,5 @@ python3 render.py --log /var/log/nginx/blog.analytics.log \
 支持图文文章目录的 Hugo 站点可在文章集合下配置 `entry_depth: 2`，同时扫描直接放在集合目录的 Markdown 和子目录下的 Markdown。该配置只影响读取深度。
 
 简体中文明细可在服务器安装对应的 GoAccess 语言包与系统 locale 后，给 `render.py` 添加 `--goaccess-locale zh_CN.UTF-8`。Nginx 日志中的英文月份仍按英文解析。
+
+明细中可按域名展开访问路径，并查看排除 GoAccess 识别的爬虫及明显自动化请求后的独立访客。日志格式升级前的记录可通过 `--legacy-host` 归入原站点。
