@@ -5,7 +5,6 @@ from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta
 import gzip
 from html import escape, unescape
-import json
 from pathlib import Path
 import re
 from string import Template
@@ -83,11 +82,12 @@ def articles_html(root, counter):
 GOACCESS_FORMAT = '%v %h - - [%d:%t %^] "%r" %s %b "%R" "%u"'
 
 
-def run_goaccess(log, output, locale, *options):
+def run_goaccess(log, output, locale):
     subprocess.run([
         'goaccess', str(log), '--log-format=' + GOACCESS_FORMAT,
         '--date-format=%d/%b/%Y', '--time-format=%T', '--anonymize-ip',
-        '--ignore-panel=HOSTS', '--no-progress', *options, '-o', str(output),
+        '--ignore-crawlers', '--enable-panel=VIRTUAL_HOSTS', '--ignore-panel=HOSTS',
+        '--no-progress', '-o', str(output),
     ], check=True, env={
         'PATH': '/usr/bin:/bin',
         'LANG': locale,
@@ -95,38 +95,6 @@ def run_goaccess(log, output, locale, *options):
         'LC_TIME': 'C',
     })
 
-
-def details_summary(visitors, domains):
-    groups = []
-    for domain, paths in sorted(domains.items()):
-        rows = ''.join(
-            f'<tr><td style="overflow-wrap:anywhere">{escape(path)}</td><td>{count:,}</td></tr>'
-            for path, count in sorted(paths.items(), key=lambda item: (-item[1], item[0]))[:50]
-        )
-        groups.append(f'''<details class="traffic-domain">
-          <summary>{escape(domain)} · {sum(paths.values()):,} 次请求</summary>
-          <table class="table">
-            <thead><tr><th scope="col">访问路径</th><th scope="col">请求次数</th></tr></thead>
-            <tbody>{rows}</tbody>
-          </table>
-        </details>''')
-    domain_groups = ''.join(groups) or '<p>暂无访问记录。</p>'
-    return f'''<section class="traffic-summary" aria-label="过滤机器人与域名请求统计">
-      <style>
-        .traffic-summary {{margin-block:1.5rem 2rem;padding:1rem 1.25rem;border:1px solid #777;border-radius:.5rem}}
-        .traffic-summary h2 {{font-size:1.45rem;margin:.25rem 0 .5rem}}
-        .traffic-summary h3 {{font-size:1.2rem;margin:1.25rem 0 .5rem}}
-        .traffic-summary .traffic-value {{font-size:1.65em;margin-inline-end:.35em}}
-        .traffic-domain {{padding:.55rem 0}}
-        .traffic-domain summary {{cursor:pointer;font-weight:600}}
-        .traffic-domain table {{margin-top:.45rem}}
-      </style>
-      <h2>独立访客（排除已识别机器人）</h2>
-      <p><strong class="traffic-value">{visitors:,}</strong>人 · 近 7 天按日去重</p>
-      <h3>按域名查看访问地址</h3>
-      <p>每个域名显示请求最多的 50 条路径。</p>
-      {domain_groups}
-    </section>'''
 
 def render(args, now):
     since = datetime.fromisoformat(args.since).astimezone(now.tzinfo)
@@ -136,15 +104,13 @@ def render(args, now):
     visitors = defaultdict(set)
     previous = set()
     articles = Counter()
-    domains = defaultdict(Counter)
     root = args.public_root.resolve(strict=True)
     args.output.mkdir(parents=True, exist_ok=True)
 
     with TemporaryDirectory(prefix='.refresh-', dir=args.output) as temporary:
         stage = Path(temporary)
         log = stage / 'sanitized.log'
-        human_log = stage / 'human.log'
-        with log.open('w', encoding='utf-8') as report, human_log.open('w', encoding='utf-8') as humans:
+        with log.open('w', encoding='utf-8') as report:
             for line in log_lines(args.log):
                 line = line.rstrip('\n')
                 match = LOG_PATTERN.fullmatch(line)
@@ -159,14 +125,9 @@ def render(args, now):
                     continue
                 # 详细报表不包含来源、查询参数或完整 IP。
                 host = hit['host'] or args.legacy_host
-                normalized = host + ' ' + line[match.start('ip'):] + '\n'
-                report.write(normalized)
-                domains[host][path] += 1
-                is_bot = BOT.search(hit['agent'])
-                if not is_bot:
-                    humans.write(normalized)
+                report.write(host + ' ' + line[match.start('ip'):] + '\n')
                 if (hit['method'] != 'GET' or hit['status'] not in ('200', '304')
-                        or not PAGE.fullmatch(path) or is_bot):
+                        or not PAGE.fullmatch(path) or BOT.search(hit['agent'])):
                     continue
                 if path.endswith('/index.html'):
                     path = path.removesuffix('index.html')
@@ -210,24 +171,10 @@ def render(args, now):
         details = stage / 'details.html'
         if log.stat().st_size:
             run_goaccess(log, details, args.goaccess_locale)
-            human_visitors = 0
-            if human_log.stat().st_size:
-                human_report = stage / 'human.json'
-                run_goaccess(human_log, human_report, 'C', '--ignore-crawlers')
-                human_visitors = json.loads(human_report.read_text(encoding='utf-8'))['general']['unique_visitors']
-            summary = details_summary(human_visitors, domains)
-            report_html = details.read_text(encoding='utf-8')
-            report_html, panels = re.subn(
-                r"""<div class=["']wrap-panels["']>""",
-                lambda match: summary + match[0], report_html, count=1,
-            )
-            if not panels:
-                report_html = report_html.replace('</body>', summary + '</body>', 1)
-            details.write_text(report_html, encoding='utf-8')
         else:
             details.write_text(
                 '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>GoAccess 请求明细</title>'
-                + details_summary(0, domains) + '<a href="./">返回访问统计</a></html>', encoding='utf-8'
+                '<p>暂无请求记录。</p><a href="./">返回访问统计</a></html>', encoding='utf-8'
             )
         for filename in ('details.html', 'index.html'):
             output = stage / filename
