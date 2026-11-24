@@ -4,6 +4,8 @@ import argparse
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta
 import gzip
+import json
+import os
 from html import escape, unescape
 from pathlib import Path
 import re
@@ -82,13 +84,14 @@ def articles_html(root, counter):
 GOACCESS_FORMAT = '%v %h - - [%d:%t %^] "%r" %s %b "%R" "%u"'
 
 
-def run_goaccess(log, output, locale):
+def run_goaccess(log, output, locale, theme=None):
+    preferences = ['--html-prefs=' + json.dumps({'theme': theme})] if theme else []
     subprocess.run([
         'goaccess', str(log), '--log-format=' + GOACCESS_FORMAT,
         '--date-format=%d/%b/%Y', '--time-format=%T', '--anonymize-ip',
         '--ignore-crawlers', '--enable-panel=VIRTUAL_HOSTS', '--ignore-panel=HOSTS',
-        '--no-progress', '-o', str(output),
-    ], check=True, env={
+        '--no-progress', *preferences, '-o', str(output),
+    ], check=True, timeout=12, env={
         'PATH': '/usr/bin:/bin',
         'LANG': locale,
         # Nginx 日志使用 Jan、Nov 等英文月份。
@@ -99,6 +102,8 @@ def run_goaccess(log, output, locale):
 def render(args, now):
     since = datetime.fromisoformat(args.since).astimezone(now.tzinfo)
     days = [now.date() - timedelta(days=offset) for offset in range(6, -1, -1)]
+    first_available = now.date()
+    snapshot_start = max(since.date(), now.date() - timedelta(days=29))
     yesterday = days[-2]
     yesterday_cutoff = now - timedelta(days=1)
     visitors = defaultdict(set)
@@ -110,7 +115,8 @@ def render(args, now):
     with TemporaryDirectory(prefix='.refresh-', dir=args.output) as temporary:
         stage = Path(temporary)
         log = stage / 'sanitized.log'
-        with log.open('w', encoding='utf-8') as report:
+        snapshot = stage / 'range-lines'
+        with log.open('w', encoding='utf-8') as report, snapshot.open('w', encoding='utf-8') as ranges:
             for line in log_lines(args.log):
                 line = line.rstrip('\n')
                 match = LOG_PATTERN.fullmatch(line)
@@ -118,14 +124,21 @@ def render(args, now):
                     continue
                 hit = match.groupdict()
                 moment = datetime.strptime(hit['stamp'], '%d/%b/%Y:%H:%M:%S %z').astimezone(now.tzinfo)
-                if not since <= moment <= now or moment.date() < days[0]:
+                if not since <= moment <= now or moment.date() < (snapshot_start if args.range_snapshot else days[0]):
                     continue
                 path = hit['path']
                 if path.startswith(('/admin/', '/admin-auth/')) or path in ('/admin', '/github-webhook/'):
                     continue
                 # 详细报表不包含来源、查询参数或完整 IP。
                 host = hit['host'] or args.legacy_host
-                report.write(host + ' ' + line[match.start('ip'):] + '\n')
+                normalized = host + ' ' + line[match.start('ip'):] + '\n'
+                if args.range_snapshot:
+                    first_available = min(first_available, moment.date())
+                    local_stamp = moment.strftime('%d/%b/%Y:%H:%M:%S %z')
+                    ranges.write(moment.date().isoformat() + '\t' + normalized.replace(hit['stamp'], local_stamp, 1))
+                if moment.date() < days[0]:
+                    continue
+                report.write(normalized)
                 if (hit['method'] != 'GET' or hit['status'] not in ('200', '304')
                         or not PAGE.fullmatch(path) or BOT.search(hit['agent'])):
                     continue
@@ -176,6 +189,18 @@ def render(args, now):
                 '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>GoAccess 请求明细</title>'
                 '<p>暂无请求记录。</p><a href="./">返回访问统计</a></html>', encoding='utf-8'
             )
+        if args.range_snapshot:
+            target = args.range_snapshot
+            snapshot_with_header = stage / 'range.log'
+            with snapshot.open('rb') as source, snapshot_with_header.open('wb') as destination:
+                destination.write(f'{first_available} {now.date()} {args.timezone}\n'.encode('ascii'))
+                for line in source:
+                    destination.write(line)
+            group = target.parent.stat().st_gid
+            if snapshot_with_header.stat().st_gid != group:
+                os.chown(snapshot_with_header, -1, group)
+            snapshot_with_header.chmod(0o640)
+            snapshot_with_header.replace(target)
         for filename in ('details.html', 'index.html'):
             output = stage / filename
             output.chmod(0o644)
@@ -190,6 +215,7 @@ if __name__ == '__main__':
     cli.add_argument('--since', required=True, help='日志开始时间，带时区的 ISO 8601')
     cli.add_argument('--timezone', default='Asia/Shanghai')
     cli.add_argument('--legacy-host', default='legacy', help='没有域名字段的旧日志所归属的域名')
+    cli.add_argument('--range-snapshot', type=Path, help='写入受保护的日期报表日志快照')
     cli.add_argument('--goaccess-locale', default='C', help='GoAccess 报表语言，例如 zh_CN.UTF-8')
     cli.add_argument('--article-prefix', default='/posts/')
     cli.add_argument('--admin-path', default='/admin/')
