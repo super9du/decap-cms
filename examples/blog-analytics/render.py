@@ -191,16 +191,17 @@ def render(args, now):
             )
         if args.range_snapshot:
             target = args.range_snapshot
-            snapshot_with_header = stage / 'range.log'
-            with snapshot.open('rb') as source, snapshot_with_header.open('wb') as destination:
-                destination.write(f'{first_available} {now.date()} {args.timezone}\n'.encode('ascii'))
-                for line in source:
-                    destination.write(line)
-            group = target.parent.stat().st_gid
-            if snapshot_with_header.stat().st_gid != group:
-                os.chown(snapshot_with_header, -1, group)
-            snapshot_with_header.chmod(0o640)
-            snapshot_with_header.replace(target)
+            with TemporaryDirectory(prefix='.range-', dir=target.parent) as staging:
+                snapshot_with_header = Path(staging) / 'range.log'
+                with snapshot.open('rb') as source, snapshot_with_header.open('wb') as destination:
+                    destination.write(f'{first_available} {now.date()} {args.timezone}\n'.encode('ascii'))
+                    for line in source:
+                        destination.write(line)
+                group = target.parent.stat().st_gid
+                if snapshot_with_header.stat().st_gid != group:
+                    os.chown(snapshot_with_header, -1, group)
+                snapshot_with_header.chmod(0o640)
+                snapshot_with_header.replace(target)
         for filename in ('details.html', 'index.html'):
             output = stage / filename
             output.chmod(0o644)
