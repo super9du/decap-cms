@@ -45,3 +45,5 @@ python3 render.py --log /var/log/nginx/blog.analytics.log \
 为原生 HTML 开启日期筛选时，定时生成器使用 `--range-snapshot /受保护目录/range.log` 额外写入最多 30 天的日志快照。日期服务运行 `range_report.py --snapshot ... --locale zh_CN.UTF-8`，通过 systemd 传入的 Unix 监听套接字接收请求。在 Nginx 验证管理员会话后，将报表地址和查询参数代理到该套接字。快照包含用于去重的访客字段，应放在公开目录外，只给生成器以及统计服务读权限。
 
 日期服务筛选快照后调用原来的 GoAccess 二进制生成完整报表。顶部控件适配 GoAccess 的浅色和深色主题，并通过报表的原生渲染顺序将虚拟主机放在第一排右侧。
+
+需要在公开文章页显示累计阅读量时，为定时生成器添加 `--public-article-views /站点可读取目录/article-views.json`。生成器用当前 sitemap 确认已发布文章，只统计 `--legacy-host` 对应站点的成功页面请求并过滤已识别机器人。首次使用仍可读取的日志，之后逐日保留已累计的计数。每日历史文件留在受保护的 `--output` 目录，公开 JSON 只包含文章路径及浏览次数。Nginx 可为 `/article-views.json` 配置单文件别名并关闭其访问日志，供文章页获取。

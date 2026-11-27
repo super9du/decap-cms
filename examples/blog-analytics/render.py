@@ -11,8 +11,9 @@ from pathlib import Path
 import re
 from string import Template
 import subprocess
-from tempfile import TemporaryDirectory
-from urllib.parse import unquote
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+from urllib.parse import unquote, urlsplit
+from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 TEMPLATE = Path(__file__).with_name('dashboard.html')
@@ -23,6 +24,7 @@ LOG_PATTERN = re.compile(
 BOT = re.compile(r'bot\b|crawl|spider|slurp|headless|curl/|wget/|python-requests|^-$', re.I)
 PAGE = re.compile(r'^/(?:[^/.]+/)*(?:[^/.]+\.html?)?$')
 TITLE = re.compile(r'<title\b[^>]*>(.*?)</title\s*>', re.I | re.S)
+ARTICLE_VIEWS_PATH = '/article-views.json'
 
 
 def log_lines(log):
@@ -35,6 +37,40 @@ def log_lines(log):
         except FileNotFoundError:
             # 文件可能恰好被日志轮转移走，下次刷新会从新文件读取。
             continue
+
+
+def published_articles(root, prefix):
+    sitemap = ElementTree.parse(root / 'sitemap.xml')
+    paths = (unquote(urlsplit(node.text).path) for node in sitemap.iterfind('.//{*}loc') if node.text)
+    return {path for path in paths if path.startswith(prefix) and path != prefix and path.endswith('/')}
+
+
+def write_json(path, data, mode):
+    with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as output:
+        temporary = Path(output.name)
+        try:
+            json.dump(data, output, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+            output.write('\n')
+            output.close()
+            temporary.chmod(mode)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def publish_article_views(destination, history, current_days, paths):
+    saved_days = json.loads(history.read_text(encoding='utf-8')) if history.is_file() else {}
+    for day, article_hits in current_days.items():
+        saved = saved_days.setdefault(day, {})
+        for path, count in article_hits.items():
+            # 保留已统计的结果，避免日志轮转导致当天计数倒退。
+            saved[path] = max(count, saved.get(path, 0))
+
+    totals = Counter()
+    for article_hits in saved_days.values():
+        totals.update(article_hits)
+    write_json(history, saved_days, 0o600)
+    write_json(destination, {path: totals[path] for path in paths}, 0o644)
 
 
 def date_label(date):
@@ -110,6 +146,8 @@ def render(args, now):
     previous = set()
     articles = Counter()
     root = args.public_root.resolve(strict=True)
+    public_articles = published_articles(root, args.article_prefix) if args.public_article_views else set()
+    public_views = defaultdict(Counter)
     args.output.mkdir(parents=True, exist_ok=True)
 
     with TemporaryDirectory(prefix='.refresh-', dir=args.output) as temporary:
@@ -124,13 +162,21 @@ def render(args, now):
                     continue
                 hit = match.groupdict()
                 moment = datetime.strptime(hit['stamp'], '%d/%b/%Y:%H:%M:%S %z').astimezone(now.tzinfo)
-                if not since <= moment <= now or moment.date() < (snapshot_start if args.range_snapshot else days[0]):
+                if not since <= moment <= now:
                     continue
                 path = hit['path']
-                if path.startswith(('/admin/', '/admin-auth/')) or path in ('/admin', '/github-webhook/'):
+                if path.startswith(('/admin/', '/admin-auth/')) or path in ('/admin', '/github-webhook/', ARTICLE_VIEWS_PATH):
+                    continue
+                host = hit['host'] or args.legacy_host
+                is_page_view = hit['method'] == 'GET' and hit['status'] in ('200', '304') and not BOT.search(hit['agent'])
+                if public_articles and host == args.legacy_host and is_page_view and path.startswith(args.article_prefix):
+                    article_path = unquote(path).removesuffix('index.html') if path.endswith('/index.html') else unquote(path)
+                    if article_path in public_articles:
+                        public_views[moment.date().isoformat()][article_path] += 1
+
+                if moment.date() < (snapshot_start if args.range_snapshot else days[0]):
                     continue
                 # 详细报表不包含来源、查询参数或完整 IP。
-                host = hit['host'] or args.legacy_host
                 normalized = host + ' ' + line[match.start('ip'):] + '\n'
                 if args.range_snapshot:
                     first_available = min(first_available, moment.date())
@@ -139,8 +185,7 @@ def render(args, now):
                 if moment.date() < days[0]:
                     continue
                 report.write(normalized)
-                if (hit['method'] != 'GET' or hit['status'] not in ('200', '304')
-                        or not PAGE.fullmatch(path) or BOT.search(hit['agent'])):
+                if not is_page_view or not PAGE.fullmatch(path):
                     continue
                 if path.endswith('/index.html'):
                     path = path.removesuffix('index.html')
@@ -206,6 +251,8 @@ def render(args, now):
             output = stage / filename
             output.chmod(0o644)
             output.replace(args.output / filename)
+    if args.public_article_views:
+        publish_article_views(args.public_article_views, args.output / 'article-views-days.json', public_views, public_articles)
 
 
 if __name__ == '__main__':
@@ -217,6 +264,7 @@ if __name__ == '__main__':
     cli.add_argument('--timezone', default='Asia/Shanghai')
     cli.add_argument('--legacy-host', default='legacy', help='没有域名字段的旧日志所归属的域名')
     cli.add_argument('--range-snapshot', type=Path, help='写入受保护的日期报表日志快照')
+    cli.add_argument('--public-article-views', type=Path, help='写入只含文章 URL 与累计浏览次数的公开 JSON')
     cli.add_argument('--goaccess-locale', default='C', help='GoAccess 报表语言，例如 zh_CN.UTF-8')
     cli.add_argument('--article-prefix', default='/posts/')
     cli.add_argument('--admin-path', default='/admin/')
