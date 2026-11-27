@@ -89,7 +89,7 @@ def run_goaccess(log, output, locale, theme=None):
     subprocess.run([
         'goaccess', str(log), '--log-format=' + GOACCESS_FORMAT,
         '--date-format=%d/%b/%Y', '--time-format=%T', '--anonymize-ip',
-        '--ignore-crawlers', '--enable-panel=VIRTUAL_HOSTS', '--ignore-panel=HOSTS',
+        '--ignore-crawlers', '--http-protocol=no', '--enable-panel=VIRTUAL_HOSTS', '--ignore-panel=HOSTS',
         '--no-progress', *preferences, '-o', str(output),
     ], check=True, timeout=12, env={
         'PATH': '/usr/bin:/bin',

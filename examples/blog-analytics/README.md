@@ -40,7 +40,7 @@ python3 render.py --log /var/log/nginx/blog.analytics.log \
 
 简体中文明细可在服务器安装对应的 GoAccess 语言包与系统 locale 后，给 `render.py` 添加 `--goaccess-locale zh_CN.UTF-8`。Nginx 日志中的英文月份仍按英文解析。
 
-明细使用 GoAccess 原生报表。`--ignore-crawlers` 对整份报表排除已识别爬虫，「虚拟主机」面板根据日志中的域名显示请求数、独立访客和传输量。日志格式升级前的记录可通过 `--legacy-host` 归入原站点。
+明细使用 GoAccess 原生报表。`--ignore-crawlers` 对整份报表排除已识别爬虫，`--http-protocol=no` 将同一文章不同 HTTP 版本的请求合并。「虚拟主机」面板根据日志中的域名显示请求数、独立访客和传输量。日志格式升级前的记录可通过 `--legacy-host` 归入原站点。
 
 为原生 HTML 开启日期筛选时，定时生成器使用 `--range-snapshot /受保护目录/range.log` 额外写入最多 30 天的日志快照。日期服务运行 `range_report.py --snapshot ... --locale zh_CN.UTF-8`，通过 systemd 传入的 Unix 监听套接字接收请求。在 Nginx 验证管理员会话后，将报表地址和查询参数代理到该套接字。快照包含用于去重的访客字段，应放在公开目录外，只给生成器以及统计服务读权限。
 
